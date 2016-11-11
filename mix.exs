@@ -14,7 +14,7 @@ defmodule Rivet.Mixfile do
   #
   # Type "mix help compile.app" for more information
   def application do
-    [applications: [:logger],
+    [applications: [:logger, :registry],
      mod: {Rivet, []}]
   end
 
@@ -30,7 +30,8 @@ defmodule Rivet.Mixfile do
   defp deps do
     [
       {:edeliver, "~> 1.4.0"},
-      {:distillery, ">= 0.8.0", warn_missing: false}
+      {:distillery, ">= 0.8.0", warn_missing: false},
+      {:registry, git: "https://github.com/elixir-lang/registry.git"}
     ]
   end
 end

@@ -43,7 +43,6 @@ defmodule Rivet.Listener do
   defp handle_connection(_, socket, client_socket) do
     {:ok, pid} = Connection.Supervisor.open_connection(client_socket)
     :gen_tcp.controlling_process(client_socket, pid)
-    Connection.Registry.register(client_socket, pid)
     accept_connections(socket)
   end
 end

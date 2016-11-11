@@ -1,7 +1,9 @@
 defmodule Rivet.Connection do
   alias Rivet.{
     Connection,
-    Connection.Request
+    Connection.Request,
+    Connection.Response,
+    Room
   }
   use GenServer
 
@@ -18,8 +20,12 @@ defmodule Rivet.Connection do
     {:ok, socket}
   end
 
-  def close_connection(pid) do
+  def close(pid) do
     GenServer.cast(pid, :close_connection)
+  end
+
+  def send_message(connection, message) do
+    GenServer.cast(connection, {:send, message})
   end
 
   def handle_info({:tcp, _, msg}, socket) do
@@ -30,9 +36,43 @@ defmodule Rivet.Connection do
   def handle_info(_, socket), do: {:noreply, socket}
 
   defp handle_tcp(%Request{type: :echo, body: msg}, socket) do
-    response = [msg, @response_suffix]
-    :gen_tcp.send(socket, response)
+    [msg, @response_suffix]
+    |> send_packet(socket)
     {:noreply, socket}
+  end
+
+  defp handle_tcp(%Request{type: :join, params: params}, socket) do
+    room_name = params["join_chatroom"]
+    {:ok, join_id, room_id} = Room.join(room_name)
+
+    [ joined_chatroom: room_name, room_ref: room_id, join_id: join_id ]
+    |> send_packet(socket)
+    {:noreply, socket}
+  end
+
+  defp handle_tcp(%Request{type: :leave, params: params}, socket) do
+    join_id = params["join_id"]
+    room_id = params["leave_chatroom"] |> String.to_integer
+
+    Room.leave(room_id)
+
+    [ left_chatroom: room_id, join_id: join_id]
+    |> send_packet(socket)
+    {:noreply, socket}
+  end
+
+  defp handle_tcp(%Request{type: :chat, params: params}, socket) do
+    room_id = params["chat"] |> String.to_integer
+    message = params["message"]
+    name    = params["client_name"]
+
+    Room.broadcast(room_id, message, name)
+
+    {:noreply, socket}
+  end
+
+  defp handle_tcp(%Request{type: :disconnect}, socket) do
+    {:stop, {:shutdown, :close_connection}, socket}
   end
 
   defp handle_tcp(%Request{type: :shutdown}, socket) do
@@ -42,12 +82,21 @@ defmodule Rivet.Connection do
 
   defp handle_tcp(_, socket), do: {:noreply, socket}
 
+  def handle_cast({:send, message}, socket) do
+    :gen_tcp.send(socket, message)
+    {:noreply, socket}
+  end
+
   def handle_cast(:close_connection, socket) do
     {:stop, {:shutdown, :close_connection}, socket}
   end
 
-  def terminate(:close_connection, socket) do
+  def send_packet(data, socket) do
+    packet = Response.encode(data)
+    :gen_tcp.send(socket, packet)
+  end
+
+  def terminate(_, socket) do
     :gen_tcp.close(socket)
-    Connection.Registry.deregister()
   end
 end

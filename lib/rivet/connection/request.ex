@@ -16,10 +16,16 @@ defmodule Rivet.Connection.Request do
 
   defp identify_request_type("HELO"<>_), do: :echo
   defp identify_request_type("KILL_SERVICE"<>_), do: :shutdown
+  defp identify_request_type("JOIN_CHATROOM"<>_), do: :join
+  defp identify_request_type("LEAVE_CHATROOM"<>_), do: :leave
+  defp identify_request_type("CHAT"<>_), do: :chat
+  defp identify_request_type("DISCONNECT"<>_), do: :disconnect
   defp identify_request_type(_), do: :unkown
 
   defp set_parameters(%Request{type: :echo} = req), do: req
   defp set_parameters(%Request{type: :shutdown} = req), do: req
+  defp set_parameters(%Request{type: :disconnect} = req), do: req
+  defp set_parameters(%Request{type: :unkown} = req), do: req
   defp set_parameters(%Request{body: body} = req) do
     %{req| params: parse_parameters(body)}
   end
