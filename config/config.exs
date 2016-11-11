@@ -3,7 +3,7 @@
 use Mix.Config
 
 config :rivet, ip_address: System.get_env("RIVET_IP_ADDRESS")
-config :rivet, port: (System.get_env("RIVET_PORT") || 4000) |> String.to_integer
+config :rivet, port: (System.get_env("RIVET_PORT") || "4000") |> String.to_integer
 config :rivet, max_connections: 50
 config :rivet, listener_enabled: Mix.env() != :test
 
