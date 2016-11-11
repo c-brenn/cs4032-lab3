@@ -44,22 +44,34 @@ defmodule Rivet.Connection do
   end
 
   defp handle_tcp(%Request{type: :join, params: params}, socket) do
-    room_name = params["join_chatroom"]
+    room_name   = params["join_chatroom"]
+    client_name = params["client_name"]
     {:ok, join_id, room_id} = Room.join(room_name)
 
-    [ joined_chatroom: room_name, room_ref: room_id, join_id: join_id ]
+    [ joined_chatroom: room_name,
+      server_ip: @ip_address,
+      port: @port,
+      room_ref: room_id,
+      join_id: join_id ]
     |> send_packet(socket)
+
+    Room.broadcast(room_id, "#{client_name} has joined this chatroom.", client_name)
+
     {:noreply, socket}
   end
 
   defp handle_tcp(%Request{type: :leave, params: params}, socket) do
     join_id = params["join_id"]
     room_id = params["leave_chatroom"] |> String.to_integer
+    client_name = params["client_name"]
 
     Room.leave(room_id)
 
     [ left_chatroom: room_id, join_id: join_id]
     |> send_packet(socket)
+
+    Room.broadcast(room_id, "#{client_name} has left this chatroom.", client_name)
+
     {:noreply, socket}
   end
 
