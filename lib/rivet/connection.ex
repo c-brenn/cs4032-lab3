@@ -6,6 +6,7 @@ defmodule Rivet.Connection do
     Room
   }
   use GenServer
+  require Logger
 
   @ip_address Application.get_env(:rivet, :ip_address)
   @port Application.get_env(:rivet, :port)
@@ -31,6 +32,7 @@ defmodule Rivet.Connection do
   def handle_info({:tcp, _, msg}, socket) do
     msg
     |> Request.parse()
+    |> log_request()
     |> handle_tcp(socket)
   end
   def handle_info(_, socket), do: {:noreply, socket}
@@ -98,5 +100,10 @@ defmodule Rivet.Connection do
 
   def terminate(_, socket) do
     :gen_tcp.close(socket)
+  end
+
+  defp log_request(%Request{} = r) do
+    Logger.info("Received Request: #{r}")
+    r
   end
 end

@@ -39,4 +39,14 @@ defmodule Rivet.Connection.Request do
       Map.put(params, String.downcase(key), value)
     end)
   end
+
+  defimpl String.Chars, for: Request do
+    def to_string(%{type: t, body: b, params: p}) do
+      """
+      type: #{t}
+      body: #{inspect(b)}
+      params: #{inspect(p)}
+      """
+    end
+  end
 end
