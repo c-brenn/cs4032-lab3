@@ -10,7 +10,7 @@ defmodule Rivet.Listener do
   @port Application.get_env(:rivet, :port)
 
   def init(port \\ @port) do
-    IO.puts "Rivet - accepting connections on port: #{port}"
+    IO.puts "Rivet - accepting connections on port #{port}"
     port
     |> open_socket()
     |> accept_connections()

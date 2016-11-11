@@ -1,5 +1,8 @@
 defmodule Rivet.Connection do
-  alias Rivet.Connection
+  alias Rivet.{
+    Connection,
+    Connection.Request
+  }
   use GenServer
 
   @ip_address Application.get_env(:rivet, :ip_address)
@@ -12,7 +15,6 @@ defmodule Rivet.Connection do
   end
 
   def init(socket) do
-    IO.puts "Connection Opened"
     {:ok, socket}
   end
 
@@ -21,17 +23,19 @@ defmodule Rivet.Connection do
   end
 
   def handle_info({:tcp, _, msg}, socket) do
-    handle_tcp(msg, socket)
+    msg
+    |> Request.parse()
+    |> handle_tcp(socket)
   end
   def handle_info(_, socket), do: {:noreply, socket}
 
-  defp handle_tcp("HELO" <> _ = msg, socket) do
+  defp handle_tcp(%Request{type: :echo, body: msg}, socket) do
     response = [msg, @response_suffix]
     :gen_tcp.send(socket, response)
     {:noreply, socket}
   end
 
-  defp handle_tcp("KILL_SERVICE" <> _, socket) do
+  defp handle_tcp(%Request{type: :shutdown}, socket) do
     Connection.Registry.terminate_open_connections()
     {:noreply, socket}
   end

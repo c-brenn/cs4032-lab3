@@ -1,5 +1,5 @@
 defmodule Rivet.Connection.Registry do
-  alias Rivet.Connection.Registry
+  alias __MODULE__
   use GenServer
 
   @name __MODULE__
@@ -13,7 +13,8 @@ defmodule Rivet.Connection.Registry do
   end
 
   def connection_count() do
-    GenServer.call(@name, :connection_count)
+    %{ workers: n } = Supervisor.count_children(Rivet.Connection.Supervisor)
+    n
   end
 
   def register(socket, pid \\ self()) do
