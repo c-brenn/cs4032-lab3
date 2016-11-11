@@ -2,7 +2,7 @@ defmodule Rivet.Connection.Request do
   alias __MODULE__
   defstruct [:type, :params, :body]
 
-  @parameter_regex ~r/[A-Z_]+: \S+/
+  @parameter_regex ~r/[A-Z_]+:\s*\S+/
 
   def parse(str) do
     %Request{body: str}
@@ -24,7 +24,6 @@ defmodule Rivet.Connection.Request do
 
   defp set_parameters(%Request{type: :echo} = req), do: req
   defp set_parameters(%Request{type: :shutdown} = req), do: req
-  defp set_parameters(%Request{type: :disconnect} = req), do: req
   defp set_parameters(%Request{type: :unkown} = req), do: req
   defp set_parameters(%Request{body: body} = req) do
     %{req| params: parse_parameters(body)}
@@ -35,8 +34,8 @@ defmodule Rivet.Connection.Request do
     |> String.split("\n", trim: true)
     |> Enum.filter(&(String.match?(&1, @parameter_regex)))
     |> Enum.reduce(%{}, fn(string, params) ->
-      [key, value] = String.split(string, ": ")
-      Map.put(params, String.downcase(key), value)
+      [key, value] = String.split(string, ":")
+      Map.put(params, String.downcase(key), String.trim_leading(value))
     end)
   end
 

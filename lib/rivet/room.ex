@@ -10,12 +10,23 @@ defmodule Rivet.Room do
   end
 
   def broadcast(room_id, message, client_name) do
-    raw_message = [chat: room_id, client_name: client_name, message: message]
-    encoded_message = Connection.Response.encode(raw_message)
+    encoded_message = encode_message(room_id, message, client_name)
 
     Room.Members.dispatch(room_id, fn members ->
       for { connection, _ } <- members do
         Connection.send_message(connection, encoded_message)
+      end
+    end)
+  end
+
+  def broadcast_to_others(room_id, message, client_name) do
+    encoded_message = encode_message(room_id, message, client_name)
+
+    Room.Members.dispatch(room_id, fn members ->
+      for { connection, _ } <- members do
+        if connection != self() do
+          Connection.send_message(connection, encoded_message)
+        end
       end
     end)
   end
@@ -25,4 +36,12 @@ defmodule Rivet.Room do
   end
 
   defp generate_join_id(), do: :erlang.unique_integer()
+
+  defp encode_message(room_id, message, client_name) do
+    """
+    CHAT: #{room_id}
+    CLIENT_NAME: #{client_name}
+    MESSAGE: #{message}\n
+    """
+  end
 end

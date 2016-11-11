@@ -8,6 +8,8 @@ defmodule Rivet.Connection do
   use GenServer
   require Logger
 
+  defstruct [:socket, :rooms]
+
   @ip_address Application.get_env(:rivet, :ip_address)
   @port Application.get_env(:rivet, :port)
   @student_number 13327472
@@ -18,7 +20,8 @@ defmodule Rivet.Connection do
   end
 
   def init(socket) do
-    {:ok, socket}
+    log_socket_event(socket, "Connection opened")
+    {:ok, %Connection{socket: socket, rooms: %{}}}
   end
 
   def close(pid) do
@@ -29,93 +32,131 @@ defmodule Rivet.Connection do
     GenServer.cast(connection, {:send, message})
   end
 
-  def handle_info({:tcp, _, msg}, socket) do
+  def handle_info({:tcp, _, msg}, conn) do
     msg
     |> Request.parse()
-    |> log_request()
-    |> handle_tcp(socket)
+    |> log_request(conn.socket)
+    |> handle_tcp(conn)
   end
-  def handle_info(_, socket), do: {:noreply, socket}
+  def handle_info(msg, conn) do
+    log_socket_event(conn.socket, "Un-handled info: #{inspect(msg)}")
+    {:noreply, conn}
+  end
 
-  defp handle_tcp(%Request{type: :echo, body: msg}, socket) do
+  defp handle_tcp(%Request{type: :echo, body: msg}, conn) do
     [msg, @response_suffix]
-    |> send_packet(socket)
-    {:noreply, socket}
+    |> send_packet(conn.socket)
+    {:noreply, conn}
   end
 
-  defp handle_tcp(%Request{type: :join, params: params}, socket) do
+  defp handle_tcp(%Request{type: :join, params: params}, conn) do
     room_name   = params["join_chatroom"]
     client_name = params["client_name"]
     {:ok, join_id, room_id} = Room.join(room_name)
 
-    [ joined_chatroom: room_name,
-      server_ip: @ip_address,
-      port: @port,
-      room_ref: room_id,
-      join_id: join_id ]
-    |> send_packet(socket)
+    """
+    JOINED_CHATROOM: #{room_name}
+    SERVER_IP: #{@ip_address}
+    PORT: #{@port}
+    ROOM_REF: #{room_id}
+    JOIN_ID: #{join_id}
+    """
+    |> send_packet(conn.socket)
 
     Room.broadcast(room_id, "#{client_name} has joined this chatroom.", client_name)
 
-    {:noreply, socket}
+    {:noreply, %{conn| rooms: Map.put(conn.rooms, room_id, join_id)}}
   end
 
-  defp handle_tcp(%Request{type: :leave, params: params}, socket) do
+  defp handle_tcp(%Request{type: :leave, params: params}, conn) do
     join_id = params["join_id"]
     room_id = params["leave_chatroom"] |> String.to_integer
     client_name = params["client_name"]
 
-    Room.leave(room_id)
-
-    [ left_chatroom: room_id, join_id: join_id]
-    |> send_packet(socket)
+    """
+    LEFT_CHATROOM: #{room_id}
+    JOIN_ID: #{join_id}
+    """
+    |> send_packet(conn.socket)
 
     Room.broadcast(room_id, "#{client_name} has left this chatroom.", client_name)
+    Room.leave(room_id)
 
-    {:noreply, socket}
+    {:noreply, %{conn| rooms: Map.delete(conn.rooms, room_id)}}
   end
 
-  defp handle_tcp(%Request{type: :chat, params: params}, socket) do
+  defp handle_tcp(%Request{type: :chat, params: params}, conn) do
     room_id = params["chat"] |> String.to_integer
     message = params["message"]
     name    = params["client_name"]
 
     Room.broadcast(room_id, message, name)
 
-    {:noreply, socket}
+    {:noreply, conn}
   end
 
-  defp handle_tcp(%Request{type: :disconnect}, socket) do
-    {:stop, {:shutdown, :close_connection}, socket}
+  defp handle_tcp(%Request{type: :disconnect, params: params}, conn) do
+    client_name = params["client_name"]
+    msg = "#{client_name} has left this chatroom."
+
+    conn.rooms
+    |> Enum.each(fn {room_id, _} ->
+      Room.broadcast(room_id, msg, client_name)
+    end)
+    Connection.close(self())
+
+    {:noreply, %{conn| rooms: %{}}}
   end
 
-  defp handle_tcp(%Request{type: :shutdown}, socket) do
+  defp handle_tcp(%Request{type: :shutdown}, conn) do
     Connection.Registry.terminate_open_connections()
-    {:noreply, socket}
+    {:noreply, conn}
   end
 
-  defp handle_tcp(_, socket), do: {:noreply, socket}
+  defp handle_tcp(_, conn), do: {:noreply, conn}
 
-  def handle_cast({:send, message}, socket) do
-    :gen_tcp.send(socket, message)
-    {:noreply, socket}
+  def handle_cast({:send, message}, conn) do
+    :gen_tcp.send(conn.socket, message)
+    log_response(conn.socket, message)
+    {:noreply, conn}
   end
 
-  def handle_cast(:close_connection, socket) do
-    {:stop, {:shutdown, :close_connection}, socket}
+  def handle_cast(:close_connection, conn) do
+    {:stop, {:shutdown, :close_connection}, conn}
   end
 
   def send_packet(data, socket) do
-    packet = Response.encode(data)
-    :gen_tcp.send(socket, packet)
+    log_response(socket, data)
+    :gen_tcp.send(socket, data)
   end
 
-  def terminate(_, socket) do
-    :gen_tcp.close(socket)
+  def terminate(_, conn) do
+    log_socket_event(conn.socket, "Connection closed")
+    :gen_tcp.close(conn.socket)
   end
 
-  defp log_request(%Request{} = r) do
-    Logger.info("Received Request: #{r}")
+  defp log_response(socket, response) do
+    msg = """
+    ------------------------
+    #{response}
+    ------------------------
+    """
+    log_socket_event(socket, ["Sent response:\n", msg])
+  end
+
+  defp log_socket_event(socket, message) do
+    {:ok, {{ip1, ip2, ip3, ip4}, port}} = :inet.peername(socket)
+    ip = "#{ip1}.#{ip2}.#{ip3}.#{ip4}"
+    Logger.info([ip, ":#{port} -- ", message])
+  end
+
+  defp log_request(%Request{} = r, socket) do
+    msg = """
+    ------------------------
+    #{r}
+    ------------------------
+    """
+    log_socket_event(socket, ["Received request:\n", msg])
     r
   end
 end
