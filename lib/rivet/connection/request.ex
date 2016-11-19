@@ -2,6 +2,12 @@ defmodule Rivet.Connection.Request do
   alias __MODULE__
   defstruct [:type, :params, :body]
 
+  @opaque t :: %Request{
+    type: atom,
+    params: %{ String.t => term},
+    body: String.t
+  }
+
   @parameter_regex ~r/[A-Z_]+:\s*\S+/
 
   def parse(str) do
